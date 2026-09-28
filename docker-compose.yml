@@ -1,6 +1,46 @@
-# TODO: Define 3 services: db, api, frontend
-#
-# Requirements:
-# - db: postgres:17-alpine, env_file .env, healthcheck
-# - api: build from ./Dockerfile, port 8080, depends_on db, env_file .env
-# - frontend: build from ./frontend/Dockerfile, port 8501, depends_on api, env API_URL=http://api:8080
+# Credentials live in .env (copy .env.example first); none are written in this file.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8080
+    ports:
+      - "8501:8501"
+    # Only waits for the api container to start, not to be healthy: the dashboard
+    # renders an "API unreachable" state on its own, and it must already be serving
+    # by the time the API answers its first /health.
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

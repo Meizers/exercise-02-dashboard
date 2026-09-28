@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Node Registry dashboard</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #dde1e8;
+      --accent: #2f5bd3; --ok: #1f7a4a; --ok-bg: #e3f4ea; --err: #b3261e; --err-bg: #fbe7e5;
+      --idle: #6b7280; --idle-bg: #eceef2;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14171d; --panel: #1c2028; --text: #e6e8ec; --muted: #9aa3b2; --line: #2d333e;
+        --accent: #7ea0ff; --ok: #6fd39c; --ok-bg: #173325; --err: #ff8f86; --err-bg: #3a1c1a;
+        --idle: #a1a8b5; --idle-bg: #262b34;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
+    h1 { font-size: 1.5rem; margin: 0; }
+    h2 { font-size: 1.05rem; margin: 0 0 12px; }
+    .muted { color: var(--muted); font-size: .9rem; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 16px; }
+    .health { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .85rem; font-weight: 600; }
+    .ok { color: var(--ok); background: var(--ok-bg); }
+    .error { color: var(--err); background: var(--err-bg); }
+    .info, .inactive { color: var(--idle); background: var(--idle-bg); }
+    .banner { padding: 10px 14px; border-radius: 8px; margin-top: 16px; font-weight: 500; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    tr:last-child td { border-bottom: none; }
+    td.name { font-weight: 600; }
+    form.inline { display: inline; margin: 0; }
+    .forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .forms .panel { margin-top: 0; }
+    label { display: block; font-size: .85rem; color: var(--muted); margin: 8px 0 4px; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+            background: var(--bg); color: var(--text); font: inherit; }
+    button { margin-top: 12px; padding: 8px 14px; border: 0; border-radius: 6px; font: inherit; font-weight: 600;
+             background: var(--accent); color: #fff; cursor: pointer; }
+    button.danger { background: var(--err); }
+    td button { margin: 0; padding: 4px 10px; font-size: .85rem; }
+    .empty { color: var(--muted); padding: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Node Registry</h1>
+    <span class="muted">API: {{ api_url }}</span>
+  </header>
+
+  <section class="health" aria-label="API health">
+    {% if health %}
+      <span class="pill {{ 'ok' if health.status == 'ok' else 'error' }}">API {{ health.status }}</span>
+      <span class="pill {{ 'ok' if health.db == 'connected' else 'error' }}">DB {{ health.db }}</span>
+      <span class="pill info">{{ health.nodes_count }} active node{{ '' if health.nodes_count == 1 else 's' }}</span>
+    {% else %}
+      <span class="pill error">API unreachable</span>
+    {% endif %}
+  </section>
+
+  {% if error %}<div class="banner error">{{ error }}</div>{% endif %}
+  {% if message %}<div class="banner {{ level }}">{{ message }}</div>{% endif %}
+
+  <section class="panel">
+    <h2>Registered nodes ({{ nodes | length }})</h2>
+    {% if nodes %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Host</th><th>Port</th><th>Status</th><th>Registered</th><th></th></tr></thead>
+        <tbody>
+        {% for node in nodes %}
+          <tr>
+            <td class="name">{{ node.name }}</td>
+            <td>{{ node.host }}</td>
+            <td>{{ node.port }}</td>
+            <td><span class="pill {{ 'ok' if node.status == 'active' else 'inactive' }}">{{ node.status }}</span></td>
+            <td class="muted">{{ node.created_at[:19] | replace('T', ' ') }}</td>
+            <td>
+              {% if node.status == 'active' %}
+              <form class="inline" method="post" action="/nodes/delete">
+                <input type="hidden" name="name" value="{{ node.name }}">
+                <button class="danger" type="submit">Delete</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="empty">No nodes registered yet.</p>
+    {% endif %}
+  </section>
+
+  <div class="forms">
+    <section class="panel">
+      <h2>Register a node</h2>
+      <form method="post" action="/nodes">
+        <label for="name">Name</label>
+        <input id="name" name="name" required maxlength="255" placeholder="node-alpha">
+        <label for="host">Host</label>
+        <input id="host" name="host" required maxlength="255" placeholder="10.0.0.1">
+        <label for="port">Port</label>
+        <input id="port" name="port" type="number" required min="1" max="65535" placeholder="9000">
+        <button type="submit">Register</button>
+      </form>
+    </section>
+    <section class="panel">
+      <h2>Delete a node by name</h2>
+      <p class="muted">Soft delete: the node stays in the list as inactive.</p>
+      <form method="post" action="/nodes/delete">
+        <label for="del-name">Name</label>
+        <input id="del-name" name="name" required maxlength="255" placeholder="node-alpha">
+        <button class="danger" type="submit">Delete</button>
+      </form>
+    </section>
+  </div>
+</main>
+</body>
+</html>
